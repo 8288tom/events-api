@@ -3,10 +3,10 @@ package routes
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 
-	error_handler "example.com/rest-api/errors"
-	"example.com/rest-api/models"
+	error_handler "example.com/events-api/errors"
+	"example.com/events-api/helpers"
+	"example.com/events-api/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,12 +21,9 @@ func getEvents(context *gin.Context) {
 }
 
 func getEvent(context *gin.Context) {
-	eventId, err := strconv.ParseInt(context.Param("id"), 10, 64)
-
+	eventId, err := helpers.GetEventId(context)
 	if err != nil {
-		fmt.Print("Could not parse event id:", err)
-		context.JSON(error_handler.BadRequest("Could not parse JSON data."))
-		return
+		return // helper function handles response
 	}
 
 	event, err := models.GetEventByID(eventId)
@@ -40,15 +37,14 @@ func getEvent(context *gin.Context) {
 
 func createEvent(context *gin.Context) {
 	var event models.Event
-	err := context.ShouldBindJSON(&event)
 
+	err := helpers.GetJSONData(context, &event)
 	if err != nil {
-		fmt.Print("could not parse JSON:", err)
-		context.JSON(error_handler.BadRequest("Could not parse JSON data."))
-		return
+		return // helper function handles response
 	}
 
-	event.UserID = 1
+	userId := context.GetInt64("userId")
+	event.UserID = userId
 
 	err = event.Save()
 	if err != nil {
@@ -63,30 +59,33 @@ func createEvent(context *gin.Context) {
 }
 
 func updateEvent(context *gin.Context) {
-	eventId, err := strconv.ParseInt(context.Param("id"), 10, 64)
-
+	eventId, err := helpers.GetEventId(context)
 	if err != nil {
-		fmt.Print("Could not parse event id:", err)
-		context.JSON(error_handler.BadRequest("Could not parse JSON data."))
-		return
+		return // helper function handles response
 	}
-	_, err = models.GetEventByID(eventId)
+
+	event, err := models.GetEventByID(eventId)
+	userId := context.GetInt64("userId")
 
 	if err != nil {
 		fmt.Print("Could not fetch event", err)
 		context.JSON(error_handler.ServerError("Could not fetch event."))
 		return
 	}
-	var updatedEvent models.Event
-	err = context.ShouldBindJSON(&updatedEvent)
 
-	if err != nil {
-		fmt.Print("Could not parse request data", err)
-		context.JSON(error_handler.BadRequest("Could not parse request data."))
+	if event.UserID != userId {
+		context.JSON(http.StatusUnauthorized, gin.H{"message": "Not authorized to update event"})
 		return
 	}
+
+	var updatedEvent models.Event
+
+	err = helpers.GetJSONData(context, &updatedEvent)
+	if err != nil {
+		return // helper function handles response
+	}
 	updatedEvent.ID = eventId
-	updatedEvent.Update()
+	err = updatedEvent.Update()
 
 	if err != nil {
 		fmt.Print("Could not update event", err)
@@ -94,4 +93,32 @@ func updateEvent(context *gin.Context) {
 		return
 	}
 	context.JSON(http.StatusOK, gin.H{"message": "Event updated successfully!"})
+}
+
+func deleteEvent(context *gin.Context) {
+	eventId, err := helpers.GetEventId(context)
+	if err != nil {
+		return // helper function handles response
+	}
+
+	event, err := models.GetEventByID(eventId)
+	userId := context.GetInt64("userId")
+
+	if err != nil {
+		fmt.Print("Could not fetch event", err)
+		context.JSON(error_handler.ServerError("Could not fetch event."))
+		return
+	}
+
+	if event.UserID != userId {
+		context.JSON(http.StatusUnauthorized, gin.H{"message": "Not authorized to delete event"})
+		return
+	}
+	err = event.Delete()
+
+	if err != nil {
+		context.JSON(error_handler.ServerError("Could not delete the event."))
+		return
+	}
+	context.JSON(http.StatusOK, gin.H{"message": "Event deleted successfully"})
 }

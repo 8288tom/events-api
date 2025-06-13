@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"example.com/rest-api/db"
+	"example.com/events-api/db"
 )
 
 type Event struct {
@@ -88,5 +88,46 @@ func (event Event) Update() error {
 	}
 	defer stmt.Close()
 	_, err = stmt.Exec(event.Name, event.Description, event.Location, event.DateTime, event.ID)
+	return err
+}
+
+func (event Event) Delete() error {
+	deleteStmnt := `
+	DELETE FROM events
+	WHERE id=?`
+
+	statment, err := db.DB.Prepare(deleteStmnt)
+	if err != nil {
+		return err
+	}
+
+	defer statment.Close()
+	_, err = statment.Exec(event.ID)
+	return err
+
+}
+
+func (event Event) Register(userId int64) error {
+	query := `INSERT INTO registrations(event_id, user_id) VALUES(?,?)`
+	stmt, err := db.DB.Prepare(query)
+
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(event.ID, userId)
+	return err
+}
+
+func (event Event) CancelRegistration(userId int64) error {
+	query := `DELETE FROM registrations WHER user_id=? AND event_id=?`
+	stmt, err := db.DB.Prepare(query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(userId, event.ID)
 	return err
 }
